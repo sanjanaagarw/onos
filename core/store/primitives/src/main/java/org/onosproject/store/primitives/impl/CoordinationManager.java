@@ -15,7 +15,6 @@
  */
 package org.onosproject.store.primitives.impl;
 
-import java.io.File;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -83,18 +82,16 @@ public class CoordinationManager implements CoordinationService {
 
     @Activate
     public void activate() {
-        partition = new StoragePartition(
+        partition = new DefaultStoragePartition(
                 new DefaultPartition(
                         PartitionId.SHARED,
+                        null,
                         clusterService.getNodes()
                                 .stream()
                                 .map(ControllerNode::id)
                                 .collect(Collectors.toSet())),
-                null,
-                null,
                 clusterCommunicator,
-                clusterService,
-                new File(System.getProperty("karaf.data") + "/partitions/coordination"));
+                clusterService);
         partition.open().join();
         primitiveCreator = partition.client();
         log.info("Started");

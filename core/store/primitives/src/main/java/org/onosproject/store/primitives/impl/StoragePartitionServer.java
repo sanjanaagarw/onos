@@ -21,13 +21,14 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import io.atomix.protocols.raft.RaftServer;
 import io.atomix.protocols.raft.cluster.MemberId;
 import io.atomix.protocols.raft.cluster.RaftMember;
 import io.atomix.protocols.raft.storage.RaftStorage;
 import io.atomix.storage.StorageLevel;
-import org.onosproject.core.Version;
+import org.onosproject.cluster.Partition;
 import org.onosproject.store.cluster.messaging.ClusterCommunicationService;
 import org.onosproject.store.primitives.resources.impl.AtomixSerializerAdapter;
 import org.onosproject.store.service.PartitionInfo;
@@ -101,18 +102,30 @@ public class StoragePartitionServer implements Managed<StoragePartitionServer> {
     }
 
     /**
+     * Deletes the server.
+     */
+    public void delete() {
+        try {
+            Files.delete(partition.getDataFolder().toPath());
+        } catch (IOException e) {
+            log.error("Failed to delete partition: {}", e);
+        }
+    }
+
+    /**
      * Forks the existing partition into a new partition.
      *
-     * @param version the version from which to fork the server
+     * @param fromPartition the partition from which to fork the server
      * @return future to be completed once the fork operation is complete
      */
-    public CompletableFuture<Void> fork(Version version) {
-        log.info("Forking server for partition {} ({}->{})", partition.getId(), version, partition.getVersion());
+    public CompletableFuture<Void> fork(Partition fromPartition) {
+        log.info("Forking server for partition {} ({}->{})",
+                partition.getId(), partition.getVersion(), fromPartition.getVersion());
         RaftServer.Builder builder = RaftServer.newBuilder(localMemberId)
-                .withName(partition.getName(version))
+                .withName(fromPartition.getName())
                 .withType(RaftMember.Type.PASSIVE)
                 .withProtocol(new RaftServerCommunicator(
-                        partition.getName(version),
+                        fromPartition.getName(),
                         Serializer.using(StorageNamespaces.RAFT_PROTOCOL),
                         clusterCommunicator))
                 .withElectionTimeout(Duration.ofMillis(ELECTION_TIMEOUT_MILLIS))
@@ -125,7 +138,10 @@ public class StoragePartitionServer implements Managed<StoragePartitionServer> {
                         .build());
         StoragePartition.RAFT_SERVICES.forEach(builder::addService);
         RaftServer server = builder.build();
-        return server.join(partition.getMemberIds(version))
+        return server.join(fromPartition.getMembers()
+                .stream()
+                .map(id -> MemberId.from(id.id()))
+                .collect(Collectors.toList()))
                 .thenCompose(v -> server.shutdown())
                 .thenCompose(v -> {
                     // Delete the cluster configuration file from the forked partition.
@@ -141,10 +157,10 @@ public class StoragePartitionServer implements Managed<StoragePartitionServer> {
                 }).whenComplete((r, e) -> {
                     if (e == null) {
                         log.info("Successfully forked server for partition {} ({}->{})",
-                                partition.getId(), version, partition.getVersion());
+                                partition.getId(), fromPartition.getVersion(), partition.getVersion());
                     } else {
                         log.info("Failed to fork server for partition {} ({}->{})",
-                                partition.getId(), version, partition.getVersion(), e);
+                                partition.getId(), fromPartition.getVersion(), partition.getVersion(), e);
                     }
                 }).thenApply(v -> null);
     }
@@ -169,13 +185,13 @@ public class StoragePartitionServer implements Managed<StoragePartitionServer> {
     }
 
     public CompletableFuture<Void> join(Collection<MemberId> otherMembers) {
-        log.info("Joining partition {} ({})", partition.getId(), partition.getVersion());
+        log.info("Joining partition {} ({})", partition.getId(), partition.getName());
         server = buildServer();
         return server.join(otherMembers).whenComplete((r, e) -> {
             if (e == null) {
-                log.info("Successfully joined partition {} ({})", partition.getId(), partition.getVersion());
+                log.info("Successfully joined partition {} ({})", partition.getId(), partition.getName());
             } else {
-                log.info("Failed to join partition {} ({})", partition.getId(), partition.getVersion(), e);
+                log.info("Failed to join partition {} ({})", partition.getId(), partition.getName(), e);
             }
         }).thenApply(v -> null);
     }

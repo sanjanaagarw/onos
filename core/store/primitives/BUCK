@@ -5,6 +5,7 @@ COMPILE_DEPS = [
     '//incubator/api:onos-incubator-api',
     '//core/store/serializers:onos-core-serializers',
     '//lib:atomix',
+    '//lib:joda-time',
 ]
 
 TEST_DEPS = [

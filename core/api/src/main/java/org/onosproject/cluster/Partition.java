@@ -15,7 +15,11 @@
  */
 package org.onosproject.cluster;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+
+import com.google.common.hash.Hashing;
+import org.onosproject.core.Version;
 
 /**
  * A partition or shard is a group of controller nodes that are work together to maintain state.
@@ -28,6 +32,27 @@ public interface Partition {
      * @return partition identifier
      */
     PartitionId getId();
+
+    /**
+     * Returns the partition version.
+     *
+     * @return the partition version
+     */
+    Version getVersion();
+
+    /**
+     * Returns the unique partition name.
+     *
+     * @return the unique partition name
+     */
+    default String getName() {
+        Version version = getVersion();
+        if (version != null) {
+            long hashCode = Hashing.sha256().hashString(version.toString(), StandardCharsets.UTF_8).asLong();
+            return String.format("%s-%d", getId(), hashCode);
+        }
+        return getId().toString();
+    }
 
     /**
      * Returns the controller nodes that are members of this partition.
